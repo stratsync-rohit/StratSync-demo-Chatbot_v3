@@ -18,6 +18,7 @@ interface MessageBubbleProps {
   message: Message;
 
   onSummarize?: () => void;
+  onDownloadCsv?: () => void;
 
   isSummarizing?: boolean;
 }
@@ -25,6 +26,7 @@ interface MessageBubbleProps {
 const MessageBubble: React.FC<MessageBubbleProps> = ({
   message,
   onSummarize,
+  onDownloadCsv,
   isSummarizing,
 }) => {
   
@@ -32,6 +34,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   
   const summarizeDisabled = !!isSummarizing || message.canSummarize === false;
   const showSummarizeButton = !message.isError && message.canSummarize !== false;
+  const hasTableData = !!(message.table && Array.isArray(message.table) && message.table.length > 0) ||
+    !!(message.originalRequestPayload && Array.isArray(message.originalRequestPayload.response) && message.originalRequestPayload.response.length > 0);
 
   const renderTable = (rows: Array<Record<string, any>>) => {
     if (!rows || rows.length === 0) return null;
@@ -139,6 +143,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
         
           {!isUser && (
             <div>
+              {hasTableData && (
+                <button
+                  onClick={onDownloadCsv}
+                  className={`text-xs mr-2 px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50`}
+                >
+                  Download CSV
+                </button>
+              )}
+
               {showSummarizeButton && (
                 <button
                   onClick={onSummarize}

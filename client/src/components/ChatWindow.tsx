@@ -293,6 +293,106 @@ const ChatWindow: React.FC = () => {
     }
   };
 
+  const handleDownloadCsv = (message: Message) => {
+    try {
+      const orig = message.originalRequestPayload;
+      let rows: Array<Record<string, any>> | null = null;
+
+      if (message.table && Array.isArray(message.table) && message.table.length > 0) {
+        rows = message.table;
+      } else if (orig && Array.isArray(orig.response) && orig.response.length > 0) {
+        rows = orig.response;
+      }
+
+      if (!rows || !Array.isArray(rows) || rows.length === 0) {
+        alert("No table data available to download as CSV.");
+        return;
+      }
+
+      const colSet = new Set<string>();
+      rows.forEach((r) => Object.keys(r || {}).forEach((k) => colSet.add(k)));
+      const columns = Array.from(colSet);
+
+      const escapeField = (val: any) => {
+        if (val === null || val === undefined) return "";
+        const s = typeof val === "object" ? JSON.stringify(val) : String(val);
+        return '"' + s.replace(/"/g, '""') + '"';
+      };
+
+      const lines: string[] = [];
+      lines.push(columns.join(","));
+      rows.forEach((row) => {
+        const vals = columns.map((c) => escapeField(row[c]));
+        lines.push(vals.join(","));
+      });
+
+      const csv = lines.join("\r\n");
+      const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `stratsync_table_${message.id}.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => {
+        try {
+          URL.revokeObjectURL(url);
+        } catch (e) {
+          /* ignore */
+        }
+      }, 2000);
+    } catch (err) {
+      console.error("Error downloading CSV:", err);
+      alert("Failed to download CSV.");
+    }
+  };
+
+  const handleDownloadPdf = (html?: string) => {
+    try {
+      const content = html || summaryHtml || "";
+      if (!content) {
+        alert("No HTML summary available to print/save as PDF.");
+        return;
+      }
+
+      const w = window.open("", "_blank");
+      if (!w) {
+        alert("Unable to open new window. Please allow popups for this site.");
+        return;
+      }
+
+      // Write the HTML into the new window and attempt to trigger print
+      w.document.open();
+      w.document.write(content);
+      w.document.close();
+      w.focus();
+
+      // Try to print when loaded; fallback to a short timeout
+      const tryPrint = () => {
+        try {
+          w.print();
+        } catch (e) {
+          console.error("Print failed:", e);
+          alert("Printing failed. You can manually save the opened page as PDF.");
+        }
+      };
+
+      if (w.document.readyState === "complete") {
+        tryPrint();
+      } else {
+        w.onload = tryPrint;
+        // fallback in case onload doesn't fire
+        setTimeout(() => {
+          tryPrint();
+        }, 700);
+      }
+    } catch (err) {
+      console.error("Error preparing PDF download:", err);
+      alert("Failed to prepare PDF. Check console for details.");
+    }
+  };
+
   if (!hasUserMessages) {
     return (
       <div className="flex flex-col h-screen max-w-full mx-auto bg-white shadow-lg">
@@ -335,11 +435,21 @@ const ChatWindow: React.FC = () => {
               <MessageBubble
                 message={message}
                 onSummarize={() => handleSummarize(message)}
+                onDownloadCsv={() => handleDownloadCsv(message)}
                 isSummarizing={summarizingId === message.id}
               />
 
               {summaryForId === message.id && summaryHtml && !message.isError && (
                 <div className="mt-2 p-1 bg-white border rounded">
+                  <div className="flex items-center justify-end gap-2 mb-2">
+                    <button
+                      onClick={() => handleDownloadPdf(summaryHtml || undefined)}
+                      className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
+                    >
+                      Download PDF
+                    </button>
+                    
+                  </div>
                   
 
                   <iframe
