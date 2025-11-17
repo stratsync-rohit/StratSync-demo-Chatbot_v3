@@ -354,116 +354,95 @@ const ChatWindow: React.FC = () => {
   };
 
   const handleDownloadPdf = (html?: string) => {
-    (async () => {
-      try {
-        const blob = await generatePdfBlob(html);
-        if (!blob) return;
-        const url = URL.createObjectURL(blob);
-        const a = document.createElement("a");
-        a.href = url;
-        a.download = `stratsync_summary_${Date.now()}.pdf`;
-        document.body.appendChild(a);
-        a.click();
-        a.remove();
-        setTimeout(() => {
-          try {
-            URL.revokeObjectURL(url);
-          } catch (e) {
-            /* ignore */
-          }
-        }, 2000);
-      } catch (err) {
-        console.error("Error preparing PDF download:", err);
-        alert("Failed to prepare PDF. Check console for details.");
-      }
-    })();
-  };
-
-  // Generate a PDF Blob from HTML using html2canvas + jsPDF.
-  const generatePdfBlob = async (html?: string): Promise<Blob | null> => {
-    const content = html || summaryHtml || "";
-    if (!content) {
-      alert("No HTML summary available to generate PDF.");
-      return null;
-    }
-
-    // Create a hidden container to render the HTML for rasterizing.
-    const container = document.createElement("div");
-    container.style.position = "fixed";
-    container.style.left = "-9999px";
-    container.style.top = "0";
-    container.style.width = "900px"; // a reasonable width for rendering
-    container.style.padding = "16px";
-    container.innerHTML = content;
-    document.body.appendChild(container);
-
     try {
-      // Dynamically import html2canvas and jsPDF
-      // @ts-ignore
-      const html2canvas = (await import("html2canvas")).default;
-      // @ts-ignore
-      const { jsPDF } = await import("jspdf");
+      const content = html || summaryHtml || "";
+      if (!content) {
+        alert("No HTML summary available to print/save as PDF.");
+        return;
+      }
 
-      const canvas = await html2canvas(container, { scale: 2, useCORS: true });
-      const imgData = canvas.toDataURL("image/jpeg", 1.0);
+      const w = window.open("", "_blank");
+      if (!w) {
+        alert("Unable to open new window. Please allow popups for this site.");
+        return;
+      }
 
-      const pdf = new jsPDF({ unit: "pt", format: "a4" });
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = pdf.internal.pageSize.getHeight();
+      // Write the HTML into the new window and attempt to trigger print
+      w.document.open();
+      w.document.write(content);
+      w.document.close();
+      w.focus();
 
-      const imgWidth = canvas.width;
-      const imgHeight = canvas.height;
-      const ratio = Math.min(pdfWidth / imgWidth, pdfHeight / imgHeight);
-      const renderWidth = imgWidth * ratio;
-      const renderHeight = imgHeight * ratio;
+      // Try to print when loaded; fallback to a short timeout
+      const tryPrint = () => {
+        try {
+          w.print();
+        } catch (e) {
+          console.error("Print failed:", e);
+          alert("Printing failed. You can manually save the opened page as PDF.");
+        }
+      };
 
-      pdf.addImage(imgData, "JPEG", 0, 0, renderWidth, renderHeight);
-
-      const blob = pdf.output("blob");
-      return blob;
+      if (w.document.readyState === "complete") {
+        tryPrint();
+      } else {
+        w.onload = tryPrint;
+        // fallback in case onload doesn't fire
+        setTimeout(() => {
+          tryPrint();
+        }, 700);
+      }
     } catch (err) {
-      console.error("PDF generation failed:", err);
-      alert("Failed to generate PDF. Check console for details.");
-      return null;
-    } finally {
-      if (container && container.parentNode) container.parentNode.removeChild(container);
+      console.error("Error preparing PDF download:", err);
+      alert("Failed to prepare PDF. Check console for details.");
     }
   };
 
   const handleShareSummary = async (html?: string, messageId?: string) => {
     try {
-      const blob = await generatePdfBlob(html);
-      if (!blob) return;
-      const file = new File([blob], `stratsync_summary_${messageId || Date.now()}.pdf`, { type: "application/pdf" });
+      const content = html || summaryHtml || "";
+      if (!content) {
+        alert("No summary available to share.");
+        return;
+      }
 
-      const nav: any = navigator;
-      if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
+      const filename = `stratsync_summary_${messageId || Date.now()}.html`;
+      const blob = new Blob([content], { type: "text/html" });
+      const file = new File([blob], filename, { type: "text/html" });
+
+      // If Web Share API supports files, use it to share the generated HTML file.
+      if ((navigator as any).canShare && (navigator as any).canShare({ files: [file] }) && (navigator as any).share) {
         try {
-          await nav.share({ files: [file], title: "StratSync Summary", text: "Summary from StratSync" });
+          await (navigator as any).share({ files: [file], title: "StratSync Summary", text: "Summary from StratSync" });
           return;
         } catch (e) {
           console.warn("Web Share (files) failed, falling back:", e);
         }
       }
 
-      // Fallback: download the PDF
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `stratsync_summary_${messageId || Date.now()}.pdf`;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => {
+      // Fallback: try to share text (some platforms support sharing text only)
+      if ((navigator as any).share) {
+        const textFallback = content.replace(/<[^>]*>/g, "").slice(0, 2000);
         try {
-          URL.revokeObjectURL(url);
+          await (navigator as any).share({ title: "StratSync Summary", text: textFallback });
+          return;
         } catch (e) {
-          /* ignore */
+          console.warn("Web Share (text) failed, falling back:", e);
         }
-      }, 2000);
+      }
+
+      // Final fallback: copy plain-text summary to clipboard
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        const text = content.replace(/<[^>]*>/g, "");
+        await navigator.clipboard.writeText(text);
+        alert("Summary copied to clipboard. Paste it into any app to share.");
+        return;
+      }
+
+      alert("Sharing is not supported in this browser. Use Download PDF to save and share.");
     } catch (err) {
       console.error("Share failed:", err);
-      alert("Failed to generate/share PDF summary. Check console for details.");
+      alert("Failed to share summary. Check console for details.");
     }
   };
 
