@@ -15,6 +15,7 @@ interface Message {
   table?: Array<Record<string, any>>;
   originalRequestPayload?: any;
   canSummarize?: boolean;
+  wasSummarized?: boolean;
   isError?: boolean;
 }
 
@@ -284,6 +285,11 @@ const ChatWindow: React.FC = () => {
       setSummaryHtml(html);
 
       setSummaryForId(message.id);
+
+     
+      setMessages((prev) =>
+        prev.map((m) => (m.id === message.id ? { ...m, wasSummarized: true } : m))
+      );
     } catch (err: any) {
       console.error("Error generating summary:", err);
       alert(`Failed to generate summary: ${err?.message || err}`);
