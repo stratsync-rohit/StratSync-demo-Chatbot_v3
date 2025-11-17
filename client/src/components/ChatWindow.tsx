@@ -562,6 +562,12 @@ const ChatWindow: React.FC = () => {
                     >
                       Download PDF
                     </button>
+                    <button
+                     
+                      className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
+                    >
+                      Generate Offer
+                    </button>
                   </div>
                 </>
               )}
