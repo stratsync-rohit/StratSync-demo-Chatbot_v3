@@ -6,6 +6,7 @@ interface Message {
   sender: "user" | "assistant";
   timestamp: Date;
   table?: Array<Record<string, any>>;
+  generatedOffer?: boolean;
 
   originalRequestPayload?: any;
   
@@ -39,7 +40,8 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   // button visible while preventing further clicks after summarization.
   const summarizeDisabled =
     !!isSummarizing || message.canSummarize === false || message.wasSummarized === true;
-  const showSummarizeButton = !message.isError;
+  // Do not show Summarize for messages produced by the Generate Offer flow
+  const showSummarizeButton = !message.isError && !message.generatedOffer;
   const hasTableData = !!(message.table && Array.isArray(message.table) && message.table.length > 0) ||
     !!(message.originalRequestPayload && Array.isArray(message.originalRequestPayload.response) && message.originalRequestPayload.response.length > 0);
 

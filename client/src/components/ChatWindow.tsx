@@ -11,9 +11,10 @@ interface Message {
   content: string;
   sender: "user" | "assistant";
   timestamp: Date;
- 
+
   table?: Array<Record<string, any>>;
   originalRequestPayload?: any;
+  generatedOffer?: boolean;
   canSummarize?: boolean;
   wasSummarized?: boolean;
   isError?: boolean;
@@ -35,6 +36,205 @@ const ChatWindow: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const handleGenerateOffer = async (message: Message) => {
+    if (message.isError) {
+      console.warn("Attempt to generate offer for an error message prevented.");
+      return;
+    }
+
+    try {
+      const orig = message.originalRequestPayload;
+      const queryStr =
+        orig && typeof orig.query === "string"
+          ? orig.query
+          : message.content || "";
+
+      // determine data to send (we currently use a fixed product list)
+
+      // Use the static product list data
+      const fixedData = [
+        {
+          UPC: "8411061057209",
+          BRAND_NAME: "CALVIN KLEIN",
+          SUBBRAND_NAME: "EUPHORIA MEN",
+          DESCRIPTION: "EDT SPRAY",
+          ITEM_WEIGHT: 0.46,
+          ITEM_SIZE: 100.0,
+          UOM_CODE: "ML",
+          COUNTRY_OF_ORIGIN: "US",
+        },
+        {
+          UPC: "8435415091268",
+          BRAND_NAME: "HUGO",
+          SUBBRAND_NAME: "BOSS MAN",
+          DESCRIPTION: "EDT SPRAY",
+          ITEM_WEIGHT: 0.41,
+          ITEM_SIZE: 100.0,
+          UOM_CODE: "ML",
+          COUNTRY_OF_ORIGIN: "ES",
+        },
+        {
+          UPC: "8057971180561",
+          BRAND_NAME: "CALVIN KLEIN",
+          SUBBRAND_NAME: "CK DEFY",
+          DESCRIPTION: "EDT SPRAY",
+          ITEM_WEIGHT: 0.45,
+          ITEM_SIZE: 100.0,
+          UOM_CODE: "ML",
+          COUNTRY_OF_ORIGIN: "ES",
+        },
+      ];
+
+      const payload: any = {
+        query: queryStr,
+        data: JSON.stringify(fixedData),
+      };
+
+      console.log("Rohit generate_offer payload:", payload);
+      const resp = await fetch(`${BASE_URL}/generate_offer/`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+
+        body: JSON.stringify(payload),
+      });
+
+      const bodyText = await resp.text();
+      if (!resp.ok) {
+        console.error("generate_offer server error:", bodyText);
+        throw new Error(`HTTP ${resp.status}: ${bodyText}`);
+      }
+
+      // Try parsing the response in a robust way. The API sometimes returns
+      // { data: "[...]" } where `data` is a JSON-stringified array.
+      let parsed: any = null;
+      try {
+        parsed = JSON.parse(bodyText);
+      } catch (e) {
+        parsed = bodyText;
+      }
+
+      let tableRows: any[] | null = null;
+
+      const tryParseString = (s: string): any => {
+        if (!s || typeof s !== "string") return null;
+        // first try straightforward parse
+        try {
+          return JSON.parse(s);
+        } catch (e) {
+          // try to unescape common escapes (e.g. "{\"a\":1}")
+          try {
+            const unescaped = s.replace(/\\"/g, '"').replace(/\n/g, "\n");
+            return JSON.parse(unescaped);
+          } catch (e2) {
+            // strip wrapping quotes if present
+            const stripped = s.replace(/^"/, "").replace(/"$/, "");
+            try {
+              return JSON.parse(stripped);
+            } catch (e3) {
+              return null;
+            }
+          }
+        }
+      };
+
+      if (Array.isArray(parsed)) {
+        tableRows = parsed;
+      } else if (parsed && typeof parsed === "object") {
+        if (parsed.data !== undefined && parsed.data !== null) {
+          const maybeRaw = parsed.data;
+          let maybe: any = null;
+          if (typeof maybeRaw === "string") {
+            maybe = tryParseString(maybeRaw);
+            if (maybe === null) {
+              // as a last resort, if it's a string but not parseable, use it
+              // as a single-row value so the UI can still show something.
+              tableRows = [{ data: maybeRaw }];
+            }
+          } else {
+            maybe = maybeRaw;
+          }
+
+          if (maybe !== null) {
+            if (Array.isArray(maybe)) tableRows = maybe;
+            else if (maybe && typeof maybe === "object") tableRows = [maybe];
+          }
+        } else {
+          tableRows = [parsed];
+        }
+      } else if (typeof parsed === "string") {
+        // bodyText itself might be a JSON-stringified array
+        const maybe = tryParseString(parsed);
+        if (Array.isArray(maybe)) tableRows = maybe;
+        else if (maybe && typeof maybe === "object") tableRows = [maybe];
+        else tableRows = null;
+      }
+
+      if (!tableRows || tableRows.length === 0) {
+        alert(
+          "Offer generated but response was not tabular. Check console for raw response."
+        );
+        console.log("generate_offer raw response:", parsed);
+        // still attach raw response for debugging to the original message
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === message.id
+              ? {
+                  ...m,
+                  originalRequestPayload: {
+                    ...(m.originalRequestPayload || {}),
+                    offerResponse: parsed,
+                  },
+                }
+              : m
+          )
+        );
+        setIsTyping(false);
+        return;
+      }
+
+      // Append a new assistant message containing the table so it appears
+      // immediately after the user clicks "Generate Offer". Also store the
+      // raw parsed response inside the original message's payload for
+      // debugging/history.
+      const newAssistantMessage: Message = {
+        id: (Date.now() + 1).toString(),
+        content: "",
+        sender: "assistant",
+        timestamp: new Date(),
+        table: tableRows,
+        originalRequestPayload: {
+          ...(message.originalRequestPayload || {}),
+          offerResponse: parsed,
+        },
+        generatedOffer: true,
+        canSummarize: Array.isArray(tableRows) ? tableRows.length > 0 : false,
+      };
+
+      setMessages((prev) =>
+        prev
+          .map((m) =>
+            m.id === message.id
+              ? {
+                  ...m,
+                  originalRequestPayload: {
+                    ...(m.originalRequestPayload || {}),
+                    offerResponse: parsed,
+                  },
+                }
+              : m
+          )
+          .concat(newAssistantMessage)
+      );
+
+      setIsTyping(false);
+      // ensure the new content is visible
+      scrollToBottom();
+    } catch (err: any) {
+      console.error("Error generating offer:", err);
+      alert(`Failed to generate offer: ${err?.message || err}`);
+    }
+  };
+
   useEffect(() => {
     scrollToBottom();
   }, [messages, isTyping]);
@@ -52,7 +252,7 @@ const ChatWindow: React.FC = () => {
     setMessages((prev) => [...prev, userMessage]);
     setIsTyping(true);
 
-    console.log("Rohit Query:", content);
+    console.log(" proecess Rohit Query:", content);
     try {
       const response = await fetch(`${BASE_URL}/process_user_query/`, {
         method: "POST",
@@ -60,23 +260,21 @@ const ChatWindow: React.FC = () => {
         body: JSON.stringify({ query: content }),
       });
 
-      console.log("Rohit test", response.status);
-      console.log("Rohit Response:", response.json);
+      // console.log("Rohit test", response.status);
+      // console.log("Rohit Response:", response.json);
 
       if (!response.ok) {
-        
         const errText = await response.text();
         console.error("Server error response:", errText);
         throw new Error(`HTTP ${response.status}: ${errText}`);
       }
 
       const contentType = response.headers.get("content-type");
-  let data: any;
+      let data: any;
 
       if (contentType?.includes("application/json")) {
         const jsonData = await response.json();
 
-      
         if (
           jsonData &&
           (jsonData.msg === "Success" || jsonData.data) &&
@@ -85,14 +283,17 @@ const ChatWindow: React.FC = () => {
           try {
             const parsed = JSON.parse(jsonData.data);
             if (Array.isArray(parsed)) {
-             
               const assistantMessage: Message = {
                 id: (Date.now() + 1).toString(),
                 content: "",
                 sender: "assistant",
                 timestamp: new Date(),
                 table: parsed,
-                originalRequestPayload: { query: content, response: parsed, raw: jsonData },
+                originalRequestPayload: {
+                  query: content,
+                  response: parsed,
+                  raw: jsonData,
+                },
                 canSummarize: Array.isArray(parsed) ? parsed.length > 0 : false,
               };
 
@@ -101,20 +302,21 @@ const ChatWindow: React.FC = () => {
               return;
             }
           } catch (e) {
-          
             data = JSON.stringify(jsonData);
           }
         }
 
-       
         data = jsonData.reply || jsonData.data || JSON.stringify(jsonData);
-       
+
         let canSummarizeFlag = true;
         if (typeof data === "string") {
           canSummarizeFlag = data.trim() !== "";
-          
+
           try {
-            const normalized = data.replace(/<[^>]*>/g, "").replace(/\u2019/g, "'").toLowerCase();
+            const normalized = data
+              .replace(/<[^>]*>/g, "")
+              .replace(/\u2019/g, "'")
+              .toLowerCase();
             if (
               normalized.includes("sorry") &&
               normalized.includes("couldn") &&
@@ -142,7 +344,11 @@ const ChatWindow: React.FC = () => {
           content: typeof data === "string" ? data : JSON.stringify(data),
           sender: "assistant",
           timestamp: new Date(),
-          originalRequestPayload: { query: content, response: data, raw: jsonData },
+          originalRequestPayload: {
+            query: content,
+            response: data,
+            raw: jsonData,
+          },
           canSummarize: canSummarizeFlag,
         };
 
@@ -152,9 +358,13 @@ const ChatWindow: React.FC = () => {
         data = await response.text();
 
         // check for known 'no data' message and treat it as non-summarizable
-        let nonJsonCanSummarize = typeof data === "string" ? data.trim() !== "" : !!data;
+        let nonJsonCanSummarize =
+          typeof data === "string" ? data.trim() !== "" : !!data;
         try {
-          const normalized = data.replace(/<[^>]*>/g, "").replace(/\u2019/g, "'").toLowerCase();
+          const normalized = data
+            .replace(/<[^>]*>/g, "")
+            .replace(/\u2019/g, "'")
+            .toLowerCase();
           if (
             normalized.includes("sorry") &&
             normalized.includes("couldn") &&
@@ -186,10 +396,10 @@ const ChatWindow: React.FC = () => {
           content: `Error: ${error.message || "Please try again."}`,
           sender: "assistant",
           timestamp: new Date(),
-         
+
           canSummarize: false,
           isError: true,
-          },
+        },
       ]);
     } finally {
       setIsTyping(false);
@@ -197,7 +407,6 @@ const ChatWindow: React.FC = () => {
   };
 
   const handleSummarize = async (message: Message) => {
-  
     if (message.isError) {
       console.warn("Attempt to summarize an error message prevented.");
       return;
@@ -208,13 +417,19 @@ const ChatWindow: React.FC = () => {
 
       const orig = message.originalRequestPayload;
 
-      const queryStr = orig && typeof orig.query === "string" ? orig.query : message.content || "";
+      const queryStr =
+        orig && typeof orig.query === "string"
+          ? orig.query
+          : message.content || "";
 
-     
       let dataToSend: any;
       if (orig && orig.response !== undefined) {
         dataToSend = orig.response;
-      } else if (message.table && Array.isArray(message.table) && message.table.length > 0) {
+      } else if (
+        message.table &&
+        Array.isArray(message.table) &&
+        message.table.length > 0
+      ) {
         dataToSend = message.table;
       } else if (message.content && message.content.trim() !== "") {
         dataToSend = message.content;
@@ -224,19 +439,20 @@ const ChatWindow: React.FC = () => {
 
       const payload: any = {
         query: queryStr,
-   
-        data: typeof dataToSend === "string" ? dataToSend : JSON.stringify(dataToSend),
+
+        data:
+          typeof dataToSend === "string"
+            ? dataToSend
+            : JSON.stringify(dataToSend),
       };
-     console.log("Rohit generate_summary payload:", payload);
-     
+      console.log("Rohit generate_summary payload:", payload);
+
       const resp = await fetch(`${BASE_URL}/generate_summary/`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
 
-     
-     
       const bodyText = await resp.text();
       // console.log("Rohit generate_summary raw response:", bodyText);
 
@@ -245,24 +461,25 @@ const ChatWindow: React.FC = () => {
         throw new Error(`HTTP ${resp.status}: ${bodyText}`);
       }
 
-    
       let html = bodyText;
       try {
         const maybeJson = JSON.parse(bodyText);
         if (maybeJson && typeof maybeJson === "object") {
-          if (typeof maybeJson.data === "string" && maybeJson.data.trim() !== "") {
+          if (
+            typeof maybeJson.data === "string" &&
+            maybeJson.data.trim() !== ""
+          ) {
             html = maybeJson.data;
-            console.log("Rohit generate_summary response data (from json.data):", maybeJson.data);
+            console.log(
+              "Rohit generate_summary response data (from json.data):",
+              maybeJson.data
+            );
           } else if (typeof maybeJson.msg === "string") {
             console.log("Rohit generate_summary response msg:", maybeJson.msg);
           }
         }
-      } catch (e) {
-       
-      }
+      } catch (e) {}
 
-      
-      
       try {
         html = html.replace(/^```(?:html)?\s*/i, "");
 
@@ -286,9 +503,10 @@ const ChatWindow: React.FC = () => {
 
       setSummaryForId(message.id);
 
-     
       setMessages((prev) =>
-        prev.map((m) => (m.id === message.id ? { ...m, wasSummarized: true } : m))
+        prev.map((m) =>
+          m.id === message.id ? { ...m, wasSummarized: true } : m
+        )
       );
     } catch (err: any) {
       console.error("Error generating summary:", err);
@@ -303,9 +521,17 @@ const ChatWindow: React.FC = () => {
       const orig = message.originalRequestPayload;
       let rows: Array<Record<string, any>> | null = null;
 
-      if (message.table && Array.isArray(message.table) && message.table.length > 0) {
+      if (
+        message.table &&
+        Array.isArray(message.table) &&
+        message.table.length > 0
+      ) {
         rows = message.table;
-      } else if (orig && Array.isArray(orig.response) && orig.response.length > 0) {
+      } else if (
+        orig &&
+        Array.isArray(orig.response) &&
+        orig.response.length > 0
+      ) {
         rows = orig.response;
       }
 
@@ -379,7 +605,9 @@ const ChatWindow: React.FC = () => {
           w.print();
         } catch (e) {
           console.error("Print failed:", e);
-          alert("Printing failed. You can manually save the opened page as PDF.");
+          alert(
+            "Printing failed. You can manually save the opened page as PDF."
+          );
         }
       };
 
@@ -528,7 +756,7 @@ const ChatWindow: React.FC = () => {
   return (
     <div className="flex flex-col h-screen max-w-full mx-auto bg-white shadow-lg">
       <Header />
-     
+
       <div className="flex-1 overflow-y-auto px-4 py-6 space-y-6">
         <div className="max-w-6xl mx-auto space-y-6">
           {messages.map((message) => (
@@ -540,37 +768,41 @@ const ChatWindow: React.FC = () => {
                 isSummarizing={summarizingId === message.id}
               />
 
-              {summaryForId === message.id && summaryHtml && !message.isError && (
-                <>
-                  <div className="mt-2 p-1 bg-white border rounded">
-                    <iframe
-                      title={`summary-${message.id}`}
-                      srcDoc={summaryHtml}
-                      className="w-full h-[80vh] border-0"
-                    />
-                  </div>
-                  <div className="flex items-center justify-end gap-2 mt-2">
-                    {/* <button
+              {summaryForId === message.id &&
+                summaryHtml &&
+                !message.isError && (
+                  <>
+                    <div className="mt-2 p-1 bg-white border rounded">
+                      <iframe
+                        title={`summary-${message.id}`}
+                        srcDoc={summaryHtml}
+                        className="w-full h-[80vh] border-0"
+                      />
+                    </div>
+                    <div className="flex items-center justify-end gap-2 mt-2">
+                      {/* <button
                       onClick={() => handleShareSummary(summaryHtml || undefined, message.id)}
                       className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
                     >
                       Share
                     </button> */}
-                    <button
-                      onClick={() => handleDownloadPdf(summaryHtml || undefined)}
-                      className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
-                    >
-                      Download PDF
-                    </button>
-                    <button
-                     
-                      className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
-                    >
-                      Generate Offer
-                    </button>
-                  </div>
-                </>
-              )}
+                      <button
+                        onClick={() =>
+                          handleDownloadPdf(summaryHtml || undefined)
+                        }
+                        className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
+                      >
+                        Download PDF
+                      </button>
+                      <button
+                        onClick={() => handleGenerateOffer(message)}
+                        className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
+                      >
+                        Generate Offer
+                      </button>
+                    </div>
+                  </>
+                )}
             </div>
           ))}
           {isTyping && <TypingIndicator />}
