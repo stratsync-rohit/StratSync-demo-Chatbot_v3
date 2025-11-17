@@ -354,81 +354,59 @@ const ChatWindow: React.FC = () => {
   };
 
   const handleDownloadPdf = (html?: string) => {
-    try {
-      const content = html || summaryHtml || "";
-      if (!content) {
-        alert("No HTML summary available to print/save as PDF.");
-        return;
-      }
-
-      const w = window.open("", "_blank");
-      if (!w) {
-        alert("Unable to open new window. Please allow popups for this site.");
-        return;
-      }
-
-      // Write the HTML into the new window and attempt to trigger print
-      w.document.open();
-      w.document.write(content);
-      w.document.close();
-      w.focus();
-
-      // Try to print when loaded; fallback to a short timeout
-      const tryPrint = () => {
-        try {
-          w.print();
-        } catch (e) {
-          console.error("Print failed:", e);
-          alert("Printing failed. You can manually save the opened page as PDF.");
-        }
-      };
-
-      if (w.document.readyState === "complete") {
-        tryPrint();
-      } else {
-        w.onload = tryPrint;
-        // fallback in case onload doesn't fire
+    (async () => {
+      try {
+        const blob = await generatePdfBlob(html);
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `stratsync_summary_${Date.now()}.pdf`;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
         setTimeout(() => {
-          tryPrint();
-        }, 700);
+          try {
+            URL.revokeObjectURL(url);
+          } catch (e) {
+            /* ignore */
+          }
+        }, 2000);
+      } catch (err) {
+        console.error("Error preparing PDF download:", err);
+        alert("Failed to prepare PDF. Check console for details.");
       }
-    } catch (err) {
-      console.error("Error preparing PDF download:", err);
-      alert("Failed to prepare PDF. Check console for details.");
-    }
+    })();
   };
 
-  const handleShareSummary = async (html?: string, messageId?: string) => {
-    // Generate a PDF from the HTML summary and attempt to share it.
-    let container: HTMLDivElement | null = null;
+  // Generate a PDF Blob from HTML using html2canvas + jsPDF.
+  const generatePdfBlob = async (html?: string): Promise<Blob | null> => {
+    const content = html || summaryHtml || "";
+    if (!content) {
+      alert("No HTML summary available to generate PDF.");
+      return null;
+    }
+
+    // Create a hidden container to render the HTML for rasterizing.
+    const container = document.createElement("div");
+    container.style.position = "fixed";
+    container.style.left = "-9999px";
+    container.style.top = "0";
+    container.style.width = "900px"; // a reasonable width for rendering
+    container.style.padding = "16px";
+    container.innerHTML = content;
+    document.body.appendChild(container);
+
     try {
-      const content = html || summaryHtml || "";
-      if (!content) {
-        alert("No summary available to share.");
-        return;
-      }
-
-      // Create a hidden container to render the HTML for rasterizing.
-      container = document.createElement("div");
-      container.style.position = "fixed";
-      container.style.left = "-9999px";
-      container.style.top = "0";
-      container.style.width = "900px"; // a reasonable width for rendering
-      container.style.padding = "16px";
-      container.innerHTML = content;
-      document.body.appendChild(container);
-
-      // Dynamically import html2canvas and jsPDF (avoid top-level imports so project builds without deps until installed)
+      // Dynamically import html2canvas and jsPDF
       // @ts-ignore
       const html2canvas = (await import("html2canvas")).default;
       // @ts-ignore
       const { jsPDF } = await import("jspdf");
 
-      // Render the container to a canvas at higher scale for better quality
       const canvas = await html2canvas(container, { scale: 2, useCORS: true });
       const imgData = canvas.toDataURL("image/jpeg", 1.0);
 
-      // Create a PDF sized to A4 and scale the image to fit width while preserving aspect
       const pdf = new jsPDF({ unit: "pt", format: "a4" });
       const pdfWidth = pdf.internal.pageSize.getWidth();
       const pdfHeight = pdf.internal.pageSize.getHeight();
@@ -442,9 +420,22 @@ const ChatWindow: React.FC = () => {
       pdf.addImage(imgData, "JPEG", 0, 0, renderWidth, renderHeight);
 
       const blob = pdf.output("blob");
+      return blob;
+    } catch (err) {
+      console.error("PDF generation failed:", err);
+      alert("Failed to generate PDF. Check console for details.");
+      return null;
+    } finally {
+      if (container && container.parentNode) container.parentNode.removeChild(container);
+    }
+  };
+
+  const handleShareSummary = async (html?: string, messageId?: string) => {
+    try {
+      const blob = await generatePdfBlob(html);
+      if (!blob) return;
       const file = new File([blob], `stratsync_summary_${messageId || Date.now()}.pdf`, { type: "application/pdf" });
 
-      // Try to share the PDF file using Web Share API (files)
       const nav: any = navigator;
       if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
         try {
@@ -455,7 +446,7 @@ const ChatWindow: React.FC = () => {
         }
       }
 
-      // Final fallback: trigger download of PDF
+      // Fallback: download the PDF
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -473,8 +464,6 @@ const ChatWindow: React.FC = () => {
     } catch (err) {
       console.error("Share failed:", err);
       alert("Failed to generate/share PDF summary. Check console for details.");
-    } finally {
-      if (container && container.parentNode) container.parentNode.removeChild(container);
     }
   };
 
