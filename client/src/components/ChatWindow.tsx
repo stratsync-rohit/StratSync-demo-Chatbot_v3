@@ -399,6 +399,8 @@ const ChatWindow: React.FC = () => {
   };
 
   const handleShareSummary = async (html?: string, messageId?: string) => {
+    // Generate a PDF from the rendered HTML and share it (or download as fallback).
+    let container: HTMLDivElement | null = null;
     try {
       const content = html || summaryHtml || "";
       if (!content) {
@@ -406,43 +408,89 @@ const ChatWindow: React.FC = () => {
         return;
       }
 
-      const filename = `stratsync_summary_${messageId || Date.now()}.html`;
-      const blob = new Blob([content], { type: "text/html" });
-      const file = new File([blob], filename, { type: "text/html" });
+      // Render content in hidden container for rasterizing
+      container = document.createElement("div");
+      container.style.position = "fixed";
+      container.style.left = "-9999px";
+      container.style.top = "0";
+      container.style.width = "900px";
+      container.style.padding = "16px";
+      container.innerHTML = content;
+      document.body.appendChild(container);
 
-      // If Web Share API supports files, use it to share the generated HTML file.
-      if ((navigator as any).canShare && (navigator as any).canShare({ files: [file] }) && (navigator as any).share) {
-        try {
-          await (navigator as any).share({ files: [file], title: "StratSync Summary", text: "Summary from StratSync" });
-          return;
-        } catch (e) {
-          console.warn("Web Share (files) failed, falling back:", e);
-        }
-      }
+      // Dynamically import html2canvas and jsPDF
+      // @ts-ignore
+      const html2canvas = (await import("html2canvas")).default;
+      // @ts-ignore
+      const { jsPDF } = await import("jspdf");
 
-      // Fallback: try to share text (some platforms support sharing text only)
-      if ((navigator as any).share) {
-        const textFallback = content.replace(/<[^>]*>/g, "").slice(0, 2000);
-        try {
-          await (navigator as any).share({ title: "StratSync Summary", text: textFallback });
-          return;
-        } catch (e) {
-          console.warn("Web Share (text) failed, falling back:", e);
-        }
-      }
+      // Use jsPDF.html to try to keep text selectable and preserve layout
+      const { jsPDF: _jsPDF } = await import("jspdf");
+      const pdf = new _jsPDF({ unit: "pt", format: "a4" });
 
-      // Final fallback: copy plain-text summary to clipboard
-      if (navigator.clipboard && navigator.clipboard.writeText) {
-        const text = content.replace(/<[^>]*>/g, "");
-        await navigator.clipboard.writeText(text);
-        alert("Summary copied to clipboard. Paste it into any app to share.");
-        return;
-      }
+      await new Promise<void>((resolve, reject) => {
+        // @ts-ignore
+        pdf.html(container, {
+          x: 0,
+          y: 0,
+          html2canvas: { scale: 2, useCORS: true },
+          callback: (doc: any) => {
+            try {
+              const blob = doc.output("blob");
+              const file = new File([blob], `stratsync_summary_${messageId || Date.now()}.pdf`, { type: "application/pdf" });
 
-      alert("Sharing is not supported in this browser. Use Download PDF to save and share.");
+              const nav: any = navigator;
+              if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
+                nav.share({ files: [file], title: "StratSync Summary", text: "Summary from StratSync" })
+                  .then(() => resolve())
+                  .catch((e: any) => {
+                    console.warn("Web Share (files) failed, falling back:", e);
+                    // fallback to download
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url;
+                    a.download = `stratsync_summary_${messageId || Date.now()}.pdf`;
+                    document.body.appendChild(a);
+                    a.click();
+                    a.remove();
+                    setTimeout(() => {
+                      try {
+                        URL.revokeObjectURL(url);
+                      } catch (er) {
+                        /* ignore */
+                      }
+                      resolve();
+                    }, 2000);
+                  });
+              } else {
+                // fallback to download
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement("a");
+                a.href = url;
+                a.download = `stratsync_summary_${messageId || Date.now()}.pdf`;
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                setTimeout(() => {
+                  try {
+                    URL.revokeObjectURL(url);
+                  } catch (er) {
+                    /* ignore */
+                  }
+                  resolve();
+                }, 2000);
+              }
+            } catch (err) {
+              reject(err);
+            }
+          },
+        });
+      });
     } catch (err) {
       console.error("Share failed:", err);
-      alert("Failed to share summary. Check console for details.");
+      alert("Failed to generate/share PDF summary. Check console for details.");
+    } finally {
+      if (container && container.parentNode) container.parentNode.removeChild(container);
     }
   };
 
