@@ -263,17 +263,48 @@ const ChatWindow: React.FC = () => {
       
       
       try {
-       
         html = html.replace(/^```(?:html)?\s*/i, "");
-        
+
         html = html.replace(/\s*```\s*$/i, "");
       } catch (e) {
-        
+        /* ignore */
       }
 
-      const blob = new Blob([html], { type: "text/html" });
+      // Append a download/print button to the end of the rendered HTML so
+      // the iframe will show a button at the end of the summary content.
+      const buttonSnippet = `\n<div style="text-align:right;padding:8px;">
+  <button id="stratsync-download-btn" style="font-size:14px;padding:8px 12px;border-radius:6px;border:1px solid #d1d5db;background:#ffffff;color:#000;cursor:pointer;">Download PDF</button>
+</div>
+<script>
+  (function(){
+    try {
+      var btn = document.getElementById('stratsync-download-btn');
+      if (btn) {
+        btn.addEventListener('click', function(e){
+          e && e.stopPropagation && e.stopPropagation();
+          try { window.print(); } catch (err) { console.error(err); alert('Printing failed. You can open this page in a new tab and save as PDF.'); }
+        });
+      }
+    } catch(e) { console.error(e); }
+  })();
+</script>\n`;
+
+      let htmlWithButton = html;
+      try {
+        if (/<\/body>/i.test(html)) {
+          htmlWithButton = html.replace(/<\/body>/i, buttonSnippet + '</body>');
+        } else if (/<\/html>/i.test(html)) {
+          htmlWithButton = html.replace(/<\/html>/i, buttonSnippet + '</html>');
+        } else {
+          htmlWithButton = html + buttonSnippet;
+        }
+      } catch (e) {
+        htmlWithButton = html + buttonSnippet;
+      }
+
+      const blob = new Blob([htmlWithButton], { type: "text/html" });
       const url = URL.createObjectURL(blob);
-     
+
       if (summaryBlobUrl) {
         try {
           URL.revokeObjectURL(summaryBlobUrl);
@@ -281,10 +312,10 @@ const ChatWindow: React.FC = () => {
           /* ignore */
         }
       }
-  setSummaryBlobUrl(url);
-  setSummaryHtml(html);
- 
-  setSummaryForId(message.id);
+      setSummaryBlobUrl(url);
+      setSummaryHtml(htmlWithButton);
+
+      setSummaryForId(message.id);
     } catch (err: any) {
       console.error("Error generating summary:", err);
       alert(`Failed to generate summary: ${err?.message || err}`);
@@ -441,22 +472,10 @@ const ChatWindow: React.FC = () => {
 
               {summaryForId === message.id && summaryHtml && !message.isError && (
                 <div className="mt-2 p-1 bg-white border rounded">
-                  <div className="flex items-center justify-end gap-2 mb-2">
-                    <button
-                      onClick={() => handleDownloadPdf(summaryHtml || undefined)}
-                      className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
-                    >
-                      Download PDF
-                    </button>
-                    
-                  </div>
-                  
-
                   <iframe
                     title={`summary-${message.id}`}
                     srcDoc={summaryHtml}
                     className="w-full h-[80vh] border-0"
-
                   />
                 </div>
               )}
