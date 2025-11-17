@@ -398,101 +398,101 @@ const ChatWindow: React.FC = () => {
     }
   };
 
-  const handleShareSummary = async (html?: string, messageId?: string) => {
-    // Generate a PDF from the rendered HTML and share it (or download as fallback).
-    let container: HTMLDivElement | null = null;
-    try {
-      const content = html || summaryHtml || "";
-      if (!content) {
-        alert("No summary available to share.");
-        return;
-      }
+  // const handleShareSummary = async (html?: string, messageId?: string) => {
+  //   // Generate a PDF from the rendered HTML and share it (or download as fallback).
+  //   let container: HTMLDivElement | null = null;
+  //   try {
+  //     const content = html || summaryHtml || "";
+  //     if (!content) {
+  //       alert("No summary available to share.");
+  //       return;
+  //     }
 
-      // Render content in hidden container for rasterizing
-      container = document.createElement("div");
-      container.style.position = "fixed";
-      container.style.left = "-9999px";
-      container.style.top = "0";
-      container.style.width = "900px";
-      container.style.padding = "16px";
-      container.innerHTML = content;
-      document.body.appendChild(container);
+  //     // Render content in hidden container for rasterizing
+  //     container = document.createElement("div");
+  //     container.style.position = "fixed";
+  //     container.style.left = "-9999px";
+  //     container.style.top = "0";
+  //     container.style.width = "900px";
+  //     container.style.padding = "16px";
+  //     container.innerHTML = content;
+  //     document.body.appendChild(container);
 
-      // Dynamically import html2canvas and jsPDF
-      // @ts-ignore
-      const html2canvas = (await import("html2canvas")).default;
-      // @ts-ignore
-      const { jsPDF } = await import("jspdf");
+  //     // Dynamically import html2canvas and jsPDF
+  //     // @ts-ignore
+  //     const html2canvas = (await import("html2canvas")).default;
+  //     // @ts-ignore
+  //     const { jsPDF } = await import("jspdf");
 
-      // Use jsPDF.html to try to keep text selectable and preserve layout
-      const { jsPDF: _jsPDF } = await import("jspdf");
-      const pdf = new _jsPDF({ unit: "pt", format: "a4" });
+  //     // Use jsPDF.html to try to keep text selectable and preserve layout
+  //     const { jsPDF: _jsPDF } = await import("jspdf");
+  //     const pdf = new _jsPDF({ unit: "pt", format: "a4" });
 
-      await new Promise<void>((resolve, reject) => {
-        // @ts-ignore
-        pdf.html(container, {
-          x: 0,
-          y: 0,
-          html2canvas: { scale: 2, useCORS: true },
-          callback: (doc: any) => {
-            try {
-              const blob = doc.output("blob");
-              const file = new File([blob], `stratsync_summary_${messageId || Date.now()}.pdf`, { type: "application/pdf" });
+  //     await new Promise<void>((resolve, reject) => {
+  //       // @ts-ignore
+  //       pdf.html(container, {
+  //         x: 0,
+  //         y: 0,
+  //         html2canvas: { scale: 2, useCORS: true },
+  //         callback: (doc: any) => {
+  //           try {
+  //             const blob = doc.output("blob");
+  //             const file = new File([blob], `stratsync_summary_${messageId || Date.now()}.pdf`, { type: "application/pdf" });
 
-              const nav: any = navigator;
-              if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
-                nav.share({ files: [file], title: "StratSync Summary", text: "Summary from StratSync" })
-                  .then(() => resolve())
-                  .catch((e: any) => {
-                    console.warn("Web Share (files) failed, falling back:", e);
-                    // fallback to download
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement("a");
-                    a.href = url;
-                    a.download = `stratsync_summary_${messageId || Date.now()}.pdf`;
-                    document.body.appendChild(a);
-                    a.click();
-                    a.remove();
-                    setTimeout(() => {
-                      try {
-                        URL.revokeObjectURL(url);
-                      } catch (er) {
-                        /* ignore */
-                      }
-                      resolve();
-                    }, 2000);
-                  });
-              } else {
-                // fallback to download
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement("a");
-                a.href = url;
-                a.download = `stratsync_summary_${messageId || Date.now()}.pdf`;
-                document.body.appendChild(a);
-                a.click();
-                a.remove();
-                setTimeout(() => {
-                  try {
-                    URL.revokeObjectURL(url);
-                  } catch (er) {
-                    /* ignore */
-                  }
-                  resolve();
-                }, 2000);
-              }
-            } catch (err) {
-              reject(err);
-            }
-          },
-        });
-      });
-    } catch (err) {
-      console.error("Share failed:", err);
-      alert("Failed to generate/share PDF summary. Check console for details.");
-    } finally {
-      if (container && container.parentNode) container.parentNode.removeChild(container);
-    }
-  };
+  //             const nav: any = navigator;
+  //             if (nav.canShare && nav.canShare({ files: [file] }) && nav.share) {
+  //               nav.share({ files: [file], title: "StratSync Summary", text: "Summary from StratSync" })
+  //                 .then(() => resolve())
+  //                 .catch((e: any) => {
+  //                   console.warn("Web Share (files) failed, falling back:", e);
+  //                   // fallback to download
+  //                   const url = URL.createObjectURL(blob);
+  //                   const a = document.createElement("a");
+  //                   a.href = url;
+  //                   a.download = `stratsync_summary_${messageId || Date.now()}.pdf`;
+  //                   document.body.appendChild(a);
+  //                   a.click();
+  //                   a.remove();
+  //                   setTimeout(() => {
+  //                     try {
+  //                       URL.revokeObjectURL(url);
+  //                     } catch (er) {
+  //                       /* ignore */
+  //                     }
+  //                     resolve();
+  //                   }, 2000);
+  //                 });
+  //             } else {
+  //               // fallback to download
+  //               const url = URL.createObjectURL(blob);
+  //               const a = document.createElement("a");
+  //               a.href = url;
+  //               a.download = `stratsync_summary_${messageId || Date.now()}.pdf`;
+  //               document.body.appendChild(a);
+  //               a.click();
+  //               a.remove();
+  //               setTimeout(() => {
+  //                 try {
+  //                   URL.revokeObjectURL(url);
+  //                 } catch (er) {
+  //                   /* ignore */
+  //                 }
+  //                 resolve();
+  //               }, 2000);
+  //             }
+  //           } catch (err) {
+  //             reject(err);
+  //           }
+  //         },
+  //       });
+  //     });
+  //   } catch (err) {
+  //     console.error("Share failed:", err);
+  //     alert("Failed to generate/share PDF summary. Check console for details.");
+  //   } finally {
+  //     if (container && container.parentNode) container.parentNode.removeChild(container);
+  //   }
+  // };
 
   if (!hasUserMessages) {
     return (
@@ -550,12 +550,12 @@ const ChatWindow: React.FC = () => {
                     />
                   </div>
                   <div className="flex items-center justify-end gap-2 mt-2">
-                    <button
+                    {/* <button
                       onClick={() => handleShareSummary(summaryHtml || undefined, message.id)}
                       className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
                     >
                       Share
-                    </button>
+                    </button> */}
                     <button
                       onClick={() => handleDownloadPdf(summaryHtml || undefined)}
                       className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
