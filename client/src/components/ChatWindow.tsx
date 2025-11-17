@@ -398,6 +398,54 @@ const ChatWindow: React.FC = () => {
     }
   };
 
+  const handleShareSummary = async (html?: string, messageId?: string) => {
+    try {
+      const content = html || summaryHtml || "";
+      if (!content) {
+        alert("No summary available to share.");
+        return;
+      }
+
+      const filename = `stratsync_summary_${messageId || Date.now()}.html`;
+      const blob = new Blob([content], { type: "text/html" });
+      const file = new File([blob], filename, { type: "text/html" });
+
+      // If Web Share API supports files, use it to share the generated HTML file.
+      if ((navigator as any).canShare && (navigator as any).canShare({ files: [file] }) && (navigator as any).share) {
+        try {
+          await (navigator as any).share({ files: [file], title: "StratSync Summary", text: "Summary from StratSync" });
+          return;
+        } catch (e) {
+          console.warn("Web Share (files) failed, falling back:", e);
+        }
+      }
+
+      // Fallback: try to share text (some platforms support sharing text only)
+      if ((navigator as any).share) {
+        const textFallback = content.replace(/<[^>]*>/g, "").slice(0, 2000);
+        try {
+          await (navigator as any).share({ title: "StratSync Summary", text: textFallback });
+          return;
+        } catch (e) {
+          console.warn("Web Share (text) failed, falling back:", e);
+        }
+      }
+
+      // Final fallback: copy plain-text summary to clipboard
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        const text = content.replace(/<[^>]*>/g, "");
+        await navigator.clipboard.writeText(text);
+        alert("Summary copied to clipboard. Paste it into any app to share.");
+        return;
+      }
+
+      alert("Sharing is not supported in this browser. Use Download PDF to save and share.");
+    } catch (err) {
+      console.error("Share failed:", err);
+      alert("Failed to share summary. Check console for details.");
+    }
+  };
+
   if (!hasUserMessages) {
     return (
       <div className="flex flex-col h-screen max-w-full mx-auto bg-white shadow-lg">
@@ -454,6 +502,12 @@ const ChatWindow: React.FC = () => {
                     />
                   </div>
                   <div className="flex items-center justify-end gap-2 mt-2">
+                    <button
+                      onClick={() => handleShareSummary(summaryHtml || undefined, message.id)}
+                      className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
+                    >
+                      Share
+                    </button>
                     <button
                       onClick={() => handleDownloadPdf(summaryHtml || undefined)}
                       className="text-xs px-3 py-1 rounded-full border bg-white text-black border-gray-300 hover:bg-gray-50"
