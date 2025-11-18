@@ -427,7 +427,7 @@ const ChatWindow: React.FC = () => {
             ? dataToSend
             : JSON.stringify(dataToSend),
       };
-      console.log("Rohit generate_summary payload:", payload);
+      // console.log("Rohit generate_summary payload:", payload);
 
       const resp = await fetch(`${BASE_URL}/generate_summary/`, {
         method: "POST",
