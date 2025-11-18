@@ -49,45 +49,27 @@ const ChatWindow: React.FC = () => {
           ? orig.query
           : message.content || "";
 
-      // determine data to send (we currently use a fixed product list)
-
-      // Use the static product list data
-      const fixedData = [
-        {
-          UPC: "8411061057209",
-          BRAND_NAME: "CALVIN KLEIN",
-          SUBBRAND_NAME: "EUPHORIA MEN",
-          DESCRIPTION: "EDT SPRAY",
-          ITEM_WEIGHT: 0.46,
-          ITEM_SIZE: 100.0,
-          UOM_CODE: "ML",
-          COUNTRY_OF_ORIGIN: "US",
-        },
-        {
-          UPC: "8435415091268",
-          BRAND_NAME: "HUGO",
-          SUBBRAND_NAME: "BOSS MAN",
-          DESCRIPTION: "EDT SPRAY",
-          ITEM_WEIGHT: 0.41,
-          ITEM_SIZE: 100.0,
-          UOM_CODE: "ML",
-          COUNTRY_OF_ORIGIN: "ES",
-        },
-        {
-          UPC: "8057971180561",
-          BRAND_NAME: "CALVIN KLEIN",
-          SUBBRAND_NAME: "CK DEFY",
-          DESCRIPTION: "EDT SPRAY",
-          ITEM_WEIGHT: 0.45,
-          ITEM_SIZE: 100.0,
-          UOM_CODE: "ML",
-          COUNTRY_OF_ORIGIN: "ES",
-        },
-      ];
+     
+      // Build payload the same way we do for generate_summary: prefer
+      // original response, then message.table, then message.content, then query
+      let dataToSend: any;
+      if (orig && orig.response !== undefined) {
+        dataToSend = orig.response;
+      } else if (
+        message.table &&
+        Array.isArray(message.table) &&
+        message.table.length > 0
+      ) {
+        dataToSend = message.table;
+      } else if (message.content && message.content.trim() !== "") {
+        dataToSend = message.content;
+      } else {
+        dataToSend = queryStr;
+      }
 
       const payload: any = {
         query: queryStr,
-        data: JSON.stringify(fixedData),
+        data: typeof dataToSend === "string" ? dataToSend : JSON.stringify(dataToSend),
       };
 
       console.log("Rohit generate_offer payload:", payload);
