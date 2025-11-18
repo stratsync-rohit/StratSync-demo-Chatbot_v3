@@ -355,7 +355,7 @@ const ChatWindow: React.FC = () => {
             nonJsonCanSummarize = false;
           }
         } catch (e) {
-          /* ignore  this error*/ 
+          /* ignore   error*/ 
         }
 
         const assistantMessage: Message = {
