@@ -234,7 +234,7 @@ const ChatWindow: React.FC = () => {
     setMessages((prev) => [...prev, userMessage]);
     setIsTyping(true);
 
-    console.log(" proecess Rohit Query:", content);
+    console.log("  Rohit Process  Query:", content);
     try {
       const response = await fetch(`${BASE_URL}/process_user_query/`, {
         method: "POST",
@@ -452,10 +452,10 @@ const ChatWindow: React.FC = () => {
             maybeJson.data.trim() !== ""
           ) {
             html = maybeJson.data;
-            console.log(
-              "Rohit generate_summary response data (from json.data):",
-              maybeJson.data
-            );
+            // console.log(
+            //   "Rohit generate_summary response data (from json.data):",
+            //   maybeJson.data
+            // );
           } else if (typeof maybeJson.msg === "string") {
             console.log("Rohit generate_summary response msg:", maybeJson.msg);
           }

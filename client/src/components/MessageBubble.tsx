@@ -34,14 +34,15 @@ const MessageBubble: React.FC<MessageBubbleProps> = ({
   
   const isUser = message.sender === "user";
   
-  // Show the Summarize button for non-error assistant messages, but disable
-  // it when there is no data to summarize (`canSummarize === false`) or the
-  // message was already summarized (`wasSummarized === true`). This keeps the
-  // button visible while preventing further clicks after summarization.
+ 
   const summarizeDisabled =
     !!isSummarizing || message.canSummarize === false || message.wasSummarized === true;
-  // Do not show Summarize for messages produced by the Generate Offer flow
-  const showSummarizeButton = !message.isError && !message.generatedOffer;
+  
+  const showSummarizeButton =
+    !message.isError &&
+    !message.generatedOffer &&
+    message.canSummarize !== false &&
+    message.wasSummarized !== true;
   const hasTableData = !!(message.table && Array.isArray(message.table) && message.table.length > 0) ||
     !!(message.originalRequestPayload && Array.isArray(message.originalRequestPayload.response) && message.originalRequestPayload.response.length > 0);
 
